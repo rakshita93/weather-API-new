@@ -1,0 +1,532 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>SkyShift — No Robot, No Sound</title>
+
+<!-- three.js -->
+<script src="https://cdn.jsdelivr.net/npm/three@0.152.2/build/three.min.js"></script>
+<!-- Chart.js -->
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+
+<style>
+  :root{--accent:#08b3cf; --muted:#b8c6cc; --panel:rgba(6,10,12,0.6);}
+  *{box-sizing:border-box}
+  html,body{height:100%;margin:0;background:#071018;color:#eaf6f9;font-family:Inter,Segoe UI,Roboto,Arial,sans-serif;overflow:hidden}
+  #threeWrap{position:fixed;inset:0;z-index:1}
+  canvas{display:block}
+
+  /* UI */
+  .ui{position:relative;z-index:40;display:flex;flex-direction:column;height:100%}
+  header{height:72px;display:flex;align-items:center;gap:12px;padding:12px 18px;background:linear-gradient(90deg,rgba(0,0,0,0.22),rgba(8,10,12,0.12));backdrop-filter:blur(6px)}
+  .brand{font-weight:800;color:var(--accent)}
+  select,input{padding:9px 12px;border-radius:10px;border:none;background:#0f1316;color:#fff}
+  button{padding:9px 12px;border-radius:10px;border:none;background:var(--accent);color:#041018;cursor:pointer;font-weight:700}
+  .toggles{margin-left:auto;display:flex;gap:12px;align-items:center;color:var(--muted)}
+
+  main{display:flex;gap:18px;padding:18px;height:calc(100% - 72px);box-sizing:border-box;overflow:auto;position:relative}
+  .left{flex:1;max-width:980px;display:flex;flex-direction:column;gap:12px}
+  .right{width:360px;display:flex;flex-direction:column;gap:12px}
+  .panel{background:var(--panel);padding:14px;border-radius:12px;box-shadow:0 12px 40px rgba(0,0,0,0.5)}
+  .topRow{display:flex;gap:14px;align-items:center}
+  .avatar{width:86px;height:86px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:40px;background:linear-gradient(180deg,#ffffff12,#ffffff03)}
+  .titleStrong{font-size:1.05rem;font-weight:700}
+  .meta{color:var(--muted);font-size:0.95rem;margin-top:6px}
+
+  .tiles{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:12px}
+  .tile{padding:12px;border-radius:10px;background:linear-gradient(180deg,rgba(255,255,255,0.02),rgba(255,255,255,0.01));min-height:92px}
+
+  .chartCard{background:#071218;padding:10px;border-radius:10px;margin-top:10px}
+
+  #titleOverlay{position:fixed;left:50%;top:12%;transform:translateX(-50%);z-index:60;pointer-events:none}
+  #titleText{font-weight:900;font-size:2.4rem;color:var(--accent);opacity:0;transform:translateY(18px);transition:all .9s ease}
+
+  .debug{font-family:monospace;font-size:12px;color:#ffb3b3;white-space:pre-wrap;max-height:120px;overflow:auto;background:rgba(0,0,0,0.2);padding:8px;border-radius:8px;margin-top:8px}
+
+  @media (max-width:1000px){
+    main{flex-direction:column;padding:12px}
+    .right{width:100%}
+    #titleText{font-size:1.6rem}
+  }
+</style>
+</head>
+<body>
+  <div id="threeWrap"></div>
+  <div id="titleOverlay"><div id="titleText">SkyShift</div></div>
+
+  <div class="ui">
+    <header>
+      <div class="brand">SkyShift</div>
+      <select id="citySelect">
+        <option>Kolkata</option><option>Chennai</option><option>Delhi</option><option>Mumbai</option>
+        <option>Bengaluru</option><option>Hyderabad</option><option>Ahmedabad</option><option>Pune</option>
+        <option>Jaipur</option><option>Lucknow</option>
+      </select>
+
+      <input id="cityInput" placeholder="Or type city" style="min-width:200px"/>
+      <button id="getBtn">Get Weather</button>
+
+      <div class="toggles">
+        <label><input type="checkbox" id="poeticToggle"> Poetic</label>
+        <div class="meta">Per-hour snapshots</div>
+      </div>
+    </header>
+
+    <main>
+      <div class="left">
+        <div class="panel">
+          <div class="topRow">
+            <div class="avatar" id="avatar">☁️</div>
+            <div style="flex:1">
+              <div class="titleStrong" id="locTitle">Select a city & press Get Weather</div>
+              <div class="meta" id="condText">Weather description appears here</div>
+              <div style="margin-top:8px">
+                <strong id="tempNow" style="font-size:26px">--°C</strong>
+                <span class="meta" id="feelsNow" style="margin-left:10px">Feels like --</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="tiles">
+            <div class="tile">
+              <h3 style="margin:0 0 8px 0">👕 Outfit Suggestion</h3>
+              <p id="outfitText" class="meta">—</p>
+            </div>
+            <div class="tile">
+              <h3 style="margin:0 0 8px 0">🎯 Activity Suggestion</h3>
+              <p id="activityText" class="meta">—</p>
+            </div>
+          </div>
+
+          <div class="chartCard">
+            <h4 style="margin:0 0 8px 0">Next 24 hours</h4>
+            <canvas id="hourChart" style="width:100%;height:160px"></canvas>
+            <div style="display:flex;gap:10px;align-items:center;margin-top:10px">
+              <input type="range" id="hourSlider" min="0" max="23" value="0" style="flex:1"/>
+              <div style="width:220px;text-align:right" id="hourInfo" class="meta">Hour</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="panel" style="margin-top:12px">
+          <h4 style="margin:0 0 8px 0">7-Day Forecast</h4>
+          <div id="dailyList" class="meta">—</div>
+        </div>
+
+        <div class="panel debug" id="debugBox">No debug messages yet.</div>
+      </div>
+
+      <div class="right">
+        <div class="panel">
+          <h4 style="margin:0 0 8px 0">Description</h4>
+          <div id="poeticLine" class="meta">Enable Poetic mode for creative forecasts.</div>
+          <div id="lastUpdated" class="meta" style="margin-top:8px">—</div>
+        </div>
+
+        <div class="panel">
+          <h4 style="margin:0 0 8px 0">Controls</h4>
+          <div class="meta">Move the hourly slider to time-travel the sky. Intro plays once on first visit.</div>
+        </div>
+
+        <div class="panel">
+          <h4 style="margin:0 0 8px 0">Credits</h4>
+          <div class="meta">three.js + WeatherAPI</div>
+        </div>
+      </div>
+    </main>
+  </div>
+
+<script>
+/* ================= CONFIG ================= */
+const WEATHER_API_KEY = '6f60d9967b0a489690a190416251008'; // WeatherAPI.com key
+const INTRO_KEY = 'skyshift_intro_once_v2';
+const debugBox = document.getElementById('debugBox');
+function dbg(msg){ debugBox.textContent = `[${new Date().toLocaleTimeString()}] ${msg}\n` + debugBox.textContent; console.log(msg); }
+
+/* ================= three.js setup ================= */
+const wrap = document.getElementById('threeWrap');
+const renderer = new THREE.WebGLRenderer({ antialias:true, alpha:false });
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+renderer.setSize(window.innerWidth, window.innerHeight);
+wrap.appendChild(renderer.domElement);
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x071018);
+scene.fog = new THREE.FogExp2(0x071018, 0.0014);
+
+const camera = new THREE.PerspectiveCamera(50, window.innerWidth/window.innerHeight, 0.1, 2000);
+camera.position.set(0, 18, 70);
+
+const ambient = new THREE.AmbientLight(0xffffff, 0.28); scene.add(ambient);
+const sun = new THREE.DirectionalLight(0xffffff, 0.9); sun.position.set(60,100,40); scene.add(sun);
+
+/* responsive */
+window.addEventListener('resize', ()=> {
+  renderer.setSize(window.innerWidth, window.innerHeight);
+  camera.aspect = window.innerWidth/window.innerHeight; camera.updateProjectionMatrix();
+});
+
+/* ---------- cloud "volumes" = stacked planes ---------- */
+const loader = new THREE.TextureLoader();
+const CLOUD_SPRITE = 'https://raw.githubusercontent.com/mrdoob/three.js/dev/examples/textures/sprites/cloud.png';
+
+function makeCloudVolume(layers=12, baseSize=40){
+  const g = new THREE.Group();
+  const t = loader.load(CLOUD_SPRITE);
+  for(let i=0;i<layers;i++){
+    const mat = new THREE.MeshLambertMaterial({ map: t, transparent: true, opacity: 0.06 + Math.random()*0.16, depthWrite:false });
+    const plane = new THREE.Mesh(new THREE.PlaneGeometry(baseSize*(0.5 + Math.random()), baseSize*(0.25 + Math.random()*0.9)), mat);
+    plane.rotation.z = (Math.random()-0.5)*0.6;
+    plane.rotation.x = -0.12 + (Math.random()-0.5)*0.08;
+    plane.position.set((Math.random()-0.5)*10, (Math.random()-0.5)*6, i*0.55 - layers*0.27);
+    g.add(plane);
+  }
+  return g;
+}
+
+const cloudField = new THREE.Group(); scene.add(cloudField);
+function populateCloudField(count=6){
+  cloudField.clear();
+  for(let i=0;i<count;i++){
+    const vol = makeCloudVolume(10 + Math.round(Math.random()*12), 24 + Math.random()*28);
+    vol.position.set((Math.random()-0.5)*320, 8 + Math.random()*32, (Math.random()-0.5)*220 - 80);
+    vol.scale.set(0.9 + Math.random()*1.4, 0.9 + Math.random()*1.4, 1);
+    cloudField.add(vol);
+  }
+}
+populateCloudField(6);
+
+/* ---------- particles for rain/snow ---------- */
+let rainPoints = null, snowPoints = null;
+function createParticles(count, color=0xbfd7ff, size=1.6){
+  const geo = new THREE.BufferGeometry();
+  const arr = new Float32Array(count*3);
+  for(let i=0;i<count;i++){
+    arr[i*3+0] = (Math.random()-0.5)*800;
+    arr[i*3+1] = Math.random()*260 + 10;
+    arr[i*3+2] = (Math.random()-0.5)*600 - 100;
+  }
+  geo.setAttribute('position', new THREE.BufferAttribute(arr, 3));
+  const mat = new THREE.PointsMaterial({ color, size, transparent:true, opacity:0.95 });
+  return new THREE.Points(geo, mat);
+}
+function startRain(){ if(rainPoints){ scene.remove(rainPoints); rainPoints.geometry.dispose(); rainPoints.material.dispose(); rainPoints=null; } rainPoints = createParticles(1200, 0xbfd7ff, 1.6); scene.add(rainPoints); }
+function stopRain(){ if(rainPoints){ scene.remove(rainPoints); rainPoints.geometry.dispose(); rainPoints.material.dispose(); rainPoints=null; } }
+function startSnow(){ if(snowPoints){ scene.remove(snowPoints); snowPoints.geometry.dispose(); snowPoints.material.dispose(); snowPoints=null; } snowPoints = createParticles(520, 0xffffff, 2.6); scene.add(snowPoints); }
+function stopSnow(){ if(snowPoints){ scene.remove(snowPoints); snowPoints.geometry.dispose(); snowPoints.material.dispose(); snowPoints=null; } }
+
+/* ---------- lightning overlay ---------- */
+const flashUniforms = { uOpacity:{ value: 0.0 }, uColor:{ value: new THREE.Color(0xffffff) } };
+const flashMat = new THREE.ShaderMaterial({
+  transparent: true, uniforms: flashUniforms,
+  vertexShader: `varying vec2 vUv; void main(){ vUv=uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }`,
+  fragmentShader: `uniform float uOpacity; uniform vec3 uColor; varying vec2 vUv; void main(){ gl_FragColor = vec4(uColor, uOpacity); }`,
+  depthWrite:false
+});
+const flashQuad = new THREE.Mesh(new THREE.PlaneGeometry(2,2), flashMat);
+flashQuad.frustumCulled = false; flashQuad.renderOrder = 999; scene.add(flashQuad);
+
+async function lightningFlash(){
+  const orig = sun.intensity;
+  await tween(0, 0.9, 40, v => flashMat.uniforms.uOpacity.value = v);
+  sun.intensity = orig * 2.5;
+  await sleep(80);
+  await tween(0.9, 0, 160, v => flashMat.uniforms.uOpacity.value = v);
+  sun.intensity = orig;
+}
+
+/* ---------- sun & sky helpers ---------- */
+function setSunForHour(hour){
+  const t = (hour - 6) / 12;
+  const theta = t * Math.PI;
+  const r = 160;
+  const y = Math.sin(theta)*60 + 6;
+  const x = Math.cos(theta)*r;
+  sun.position.set(x, Math.max(6,y), -40);
+  sun.intensity = Math.max(0.12, Math.sin(theta)*1.05);
+  ambient.intensity = 0.22 + sun.intensity*0.22;
+}
+function setSky(topHex, bottomHex){
+  scene.background.set(topHex);
+  ambient.color.set(bottomHex);
+}
+
+/* tween & sleep helpers */
+function tween(from,to,ms,onStep){ return new Promise(res=>{ const t0=performance.now(); function s(now){ const p=Math.min(1,(now-t0)/ms); const v = from + (to-from)*(1 - Math.pow(1-p,3)); onStep(v); if(p<1) requestAnimationFrame(s); else res(); } requestAnimationFrame(s); }); }
+const sleep = ms => new Promise(r=>setTimeout(r, ms));
+
+/* ---------- intro (one-time) ---------- */
+async function runIntroOnce(){
+  if(localStorage.getItem(INTRO_KEY)){
+    document.getElementById('titleText').style.opacity = 1;
+    document.getElementById('titleText').style.transform = 'translateY(0)';
+    populateCloudField(6);
+    return;
+  }
+
+  // big volume
+  const big = makeCloudVolume(34, 120);
+  big.position.set(0, 18, -90);
+  scene.add(big);
+
+  // create emoji sprites (canvas textures)
+  function makeSpriteEmoji(e){
+    const c = document.createElement('canvas'); c.width = 128; c.height = 128;
+    const ctx = c.getContext('2d'); ctx.font = '92px serif'; ctx.textAlign='center'; ctx.textBaseline='middle'; ctx.fillText(e,64,64);
+    const tex = new THREE.CanvasTexture(c);
+    const mat = new THREE.SpriteMaterial({ map: tex, transparent:true });
+    const sp = new THREE.Sprite(mat); sp.scale.set(18,18,1); return sp;
+  }
+  const icons = [makeSpriteEmoji('🌤️'), makeSpriteEmoji('🌧️'), makeSpriteEmoji('❄️'), makeSpriteEmoji('🍂')];
+  icons.forEach(s => { s.position.copy(big.position); scene.add(s); });
+
+  await sleep(600);
+  await tween(0.6, 1.06, 480, v => big.scale.set(v,v,v));
+  await tween(1.06, 1.0, 340, v => big.scale.set(v,v,v));
+  await sleep(200);
+
+  const targets = [ new THREE.Vector3(-28,36,-70), new THREE.Vector3(28,36,-70), new THREE.Vector3(-48,6,-70), new THREE.Vector3(48,6,-70) ];
+  await Promise.all(icons.map((s,i)=> spriteTo(s, targets[i], 580)));
+  await sleep(260);
+
+  // fly to title DOM point
+  const titleDom = document.getElementById('titleText');
+  const rect = titleDom.getBoundingClientRect();
+  const tx = rect.left + rect.width/2; const ty = rect.top + rect.height/2;
+  const ndcX = (tx / window.innerWidth) * 2 - 1;
+  const ndcY = - (ty / window.innerHeight) * 2 + 1;
+  const vec = new THREE.Vector3(ndcX, ndcY, 0.5).unproject(camera);
+
+  await Promise.all(icons.map((s,i)=> spriteTo(s, vec.clone().add(new THREE.Vector3((i-1.5)*6, (i%2?2:-3), 0)), 900)));
+  await Promise.all(icons.map(s => tween(1,0,520, v => s.material.opacity = v)));
+  await tween(0,1,700, v => { document.getElementById('titleText').style.opacity = v; document.getElementById('titleText').style.transform = `translateY(${(1-v)*18}px)`; });
+
+  // cleanup
+  scene.remove(big);
+  icons.forEach(s=> scene.remove(s));
+  localStorage.setItem(INTRO_KEY, '1');
+  populateCloudField(6);
+}
+function spriteTo(sp, target, ms){
+  return new Promise(res=>{
+    const start = sp.position.clone(); const t0 = performance.now();
+    function step(now){
+      const p = Math.min(1, (now - t0)/ms);
+      sp.position.lerpVectors(start, target, 1 - Math.pow(1-p,3));
+      if(p<1) requestAnimationFrame(step); else res();
+    }
+    requestAnimationFrame(step);
+  });
+}
+
+/* ---------- UI & Weather logic ---------- */
+const citySelect = document.getElementById('citySelect');
+const cityInput = document.getElementById('cityInput');
+const getBtn = document.getElementById('getBtn');
+const poeticToggle = document.getElementById('poeticToggle');
+
+const locTitle = document.getElementById('locTitle');
+const condText = document.getElementById('condText');
+const tempNowEl = document.getElementById('tempNow');
+const feelsEl = document.getElementById('feelsNow');
+const outfitEl = document.getElementById('outfitText');
+const activityEl = document.getElementById('activityText');
+const poeticLine = document.getElementById('poeticLine');
+const lastUpdated = document.getElementById('lastUpdated');
+const dailyList = document.getElementById('dailyList');
+const avatar = document.getElementById('avatar');
+const hourSlider = document.getElementById('hourSlider');
+const hourInfo = document.getElementById('hourInfo');
+
+let hourly = [], daily = [];
+
+/* helpers */
+function normalize(txt=''){ const t=(txt||'').toLowerCase(); if(/rain|drizzle|shower/.test(t)) return 'rain'; if(/snow|sleet/.test(t)) return 'snow'; if(/thunder|storm/.test(t)) return 'storm'; if(/mist|fog|haze|smoke/.test(t)) return 'mist'; if(/cloud/.test(t)) return 'clouds'; if(/clear|sunny/.test(t)) return 'clear'; return 'clear'; }
+function outfitSuggestion(temp, key){ if(key==='rain') return 'Umbrella & waterproof shoes'; if(key==='snow') return 'Warm coat, gloves'; if(temp>=28) return 'Light cottons & sunglasses'; if(temp<=15) return 'Coat & scarf'; return 'Layered comfortable clothes'; }
+function activitySuggestion(key){ if(key==='rain') return 'Cozy indoors — read & chai'; if(key==='clear') return 'Outdoor walk or picnic'; if(key==='snow') return 'Hot cocoa & indoor games'; if(key==='mist') return 'Photography or cafe'; if(key==='storm') return 'Stay in & relax'; return 'Explore nearby places'; }
+function poeticFor(k, city){ if(k==='clear') return `The sun stretches its golden limbs across ${city}.`; if(k==='rain') return `Rain whispers softly over ${city}ʼs rooftops.`; if(k==='snow') return `Snowflakes write lullabies across ${city}.`; if(k==='mist') return `A gentle veil of mist wraps ${city}.`; if(k==='storm') return `Thunder stamps its heavy feet above ${city}.`; return `${city} breathes under the quiet sky.`; }
+
+/* charts */
+let hourChart = null;
+function renderHourlyChart(data){
+  const ctx = document.getElementById('hourChart').getContext('2d');
+  const labels = data.map(h => new Date(h.time).getHours().toString().padStart(2,'0') + ':00');
+  const temps = data.map(h => Math.round(h.temp_c*10)/10);
+  if(hourChart) hourChart.destroy();
+  hourChart = new Chart(ctx, { type:'line', data:{ labels, datasets:[{ label:'°C', data:temps, tension:0.28, fill:true, pointRadius:3, backgroundColor:'rgba(8,179,207,0.06)', borderColor:'#08b3cf' }] }, options:{plugins:{legend:{display:false}}, scales:{y:{beginAtZero:false}} }});
+  hourSlider.max = Math.max(0, data.length - 1); hourSlider.value = 0; updateHour(0);
+}
+function updateHour(idx){
+  if(!hourly[idx]){ hourInfo.textContent = 'Hour'; return; }
+  const h = hourly[idx];
+  hourInfo.textContent = `${new Date(h.time).toLocaleString()} • ${Math.round(h.temp_c)}°C • ${h.condition.text}`;
+  const key = normalize(h.condition.text);
+  const hour = new Date(h.time).getHours();
+  applySnapshot(key, hour);
+  if(poeticToggle.checked) poeticLine.textContent = poeticFor(key, locTitle.textContent.split(',')[0] || '');
+  else poeticLine.textContent = `${h.condition.text}`;
+}
+
+/* apply sky snapshot for a given hour/key */
+function applySnapshot(key, hour){
+  setSunForHour(hour);
+  if(key==='clear'){ setSky(0x9ad7ff, 0xfff1c6); scene.fog.density = 0.0006; populateCloudField(5); stopRain(); stopSnow(); }
+  else if(key==='clouds'){ setSky(0x8ba6bb, 0x506774); scene.fog.density = 0.0012; populateCloudField(7); stopRain(); stopSnow(); }
+  else if(key==='rain'){ setSky(0x3f5a63, 0x081016); scene.fog.density = 0.0018; populateCloudField(9); startRain(); stopSnow(); }
+  else if(key==='snow'){ setSky(0xeaf6ff, 0xcfeffb); scene.fog.density = 0.0009; populateCloudField(6); startSnow(); stopRain(); }
+  else if(key==='mist'){ setSky(0xcfdde1, 0x9fb6bd); scene.fog.density = 0.0026; populateCloudField(6); stopRain(); stopSnow(); }
+  else if(key==='storm'){ setSky(0x1f2326, 0x07080a); scene.fog.density = 0.0024; populateCloudField(10); startRain(); stopSnow(); if(Math.random()<0.3) lightningFlash(); }
+  setAvatar(key);
+}
+function setAvatar(key){
+  if(key==='rain'){ avatar.textContent='☔'; avatar.style.background='linear-gradient(180deg,#e7f9ff,#d7f3fb)'; }
+  else if(key==='snow'){ avatar.textContent='🧣'; avatar.style.background='linear-gradient(180deg,#fff7f8,#f0f6ff)'; }
+  else if(key==='clear'){ avatar.textContent='😎'; avatar.style.background='linear-gradient(180deg,#fff6d2,#ffd26a)'; }
+  else if(key==='mist'){ avatar.textContent='🌫️'; avatar.style.background='linear-gradient(180deg,#f2f6f8,#dfeaf0)'; }
+  else if(key==='storm'){ avatar.textContent='⚡'; avatar.style.background='linear-gradient(180deg,#fff6e6,#ffd8a6)'; }
+  else { avatar.textContent='☁️'; avatar.style.background='linear-gradient(180deg,#ffffff10,#ffffff06)'; }
+}
+
+/* ---------- fetch WeatherAPI (forecast) ---------- */
+async function fetchWeather(city){
+  dbg(`Fetching ${city}...`);
+  try{
+    const url = `https://api.weatherapi.com/v1/forecast.json?key=${WEATHER_API_KEY}&q=${encodeURIComponent(city)}&days=7&aqi=no&alerts=no`;
+    dbg('URL: ' + url);
+    const res = await fetch(url, { cache:'no-store' });
+    dbg('HTTP ' + res.status);
+    if(!res.ok){
+      const txt = await res.text().catch(()=>res.statusText);
+      dbg(`Fetch failed (${res.status}): ${txt}`);
+      throw new Error(`Weather request failed (${res.status})`);
+    }
+    const data = await res.json();
+    dbg('Data received for ' + data.location.name);
+    // current
+    const cur = data.current, loc = data.location;
+    locTitle.textContent = `${loc.name}${loc.region? ', '+loc.region : ''}`;
+    condText.textContent = cur.condition.text;
+    tempNowEl.textContent = `${Math.round(cur.temp_c)}°C`;
+    feelsEl.textContent = `Feels like ${Math.round(cur.feelslike_c)}°C`;
+    lastUpdated.textContent = `Local: ${loc.localtime}`;
+    // hourly
+    hourly = data.forecast.forecastday[0].hour; // raw hour objects
+    renderHourlyChart(hourly.map(h=>({ time:h.time, temp_c:h.temp_c, condition:{ text:h.condition.text } })));
+    // daily
+    daily = data.forecast.forecastday;
+    dailyList.innerHTML = daily.map(d=>`${d.date}: ${Math.round(d.day.mintemp_c)}°C / ${Math.round(d.day.maxtemp_c)}°C • ${d.day.condition.text}`).join('<br>');
+    // suggestions
+    const curKey = normalize(cur.condition.text);
+    outfitEl.textContent = outfitSuggestion(cur.temp_c, curKey);
+    activityEl.textContent = activitySuggestion(curKey);
+    poeticLine.textContent = poeticToggle.checked ? poeticFor(curKey, loc.name) : `${cur.condition.text} • Hum ${cur.humidity}% • Wind ${cur.wind_kph} kph`;
+    // initial snapshot (based on local hour)
+    const hourIdx = Math.min(hourly.length-1, new Date(loc.localtime).getHours());
+    hourSlider.value = hourIdx; updateHour(hourIdx);
+    // small camera subtle movement
+  } catch(err){
+    dbg('Error: ' + (err && err.message));
+    locTitle.textContent = 'Unable to fetch weather';
+    condText.textContent = err.message || 'Network/API error';
+    tempNowEl.textContent = '--°C';
+    feelsEl.textContent = '—';
+    hourly = sampleHourly();
+    renderHourlyChart(hourly);
+    dailyList.textContent = '—';
+    outfitEl.textContent = '—';
+    activityEl.textContent = '—';
+    poeticLine.textContent = 'Showing sample sky due to fetch error.';
+    updateHour(0);
+  }
+}
+function sampleHourly(){
+  const now = new Date(); const arr=[];
+  for(let i=0;i<24;i++){
+    const dt = new Date(now.getFullYear(), now.getMonth(), now.getDate(), i).toISOString();
+    const text = (i>6 && i<18) ? (i%5===0 ? 'Partly cloudy' : 'Clear') : 'Clear';
+    arr.push({ time: dt, temp_c: 22 + Math.sin(i/24*Math.PI*2)*6, condition:{ text }});
+  }
+  return arr;
+}
+
+/* UI events */
+getBtn.addEventListener('click', ()=> {
+  const city = (cityInput.value.trim() || citySelect.value);
+  if(!city) return alert('Please choose or type a city.');
+  fetchWeather(city);
+});
+hourSlider.addEventListener('input', e => updateHour(Number(e.target.value)));
+poeticToggle.addEventListener('change', ()=> { const idx = Number(hourSlider.value||0); updateHour(idx); });
+
+/* ---------- render loop and updates ---------- */
+let last = performance.now();
+function animate(){
+  const now = performance.now();
+  const dt = (now - last)/1000;
+  last = now;
+  // drift cloud volumes
+  cloudField.children.forEach((vol, i) => {
+    vol.position.x += dt * (6 + i*0.9);
+    if(vol.position.x > 420) vol.position.x = -420;
+    vol.rotation.z += dt * (0.006 + i*0.001);
+  });
+  // update rain
+  if(rainPoints){
+    const pos = rainPoints.geometry.attributes.position.array;
+    for(let i=0;i<pos.length/3;i++){
+      pos[i*3+1] -= 80 * dt;
+      pos[i*3+0] += -10 * dt;
+      if(pos[i*3+1] < -20){
+        pos[i*3+1] = 220 + Math.random()*40;
+        pos[i*3+0] = (Math.random()-0.5)*800;
+      }
+    }
+    rainPoints.geometry.attributes.position.needsUpdate = true;
+  }
+  // update snow
+  if(snowPoints){
+    const pos = snowPoints.geometry.attributes.position.array;
+    for(let i=0;i<pos.length/3;i++){
+      pos[i*3+1] -= 12 * dt;
+      pos[i*3+0] += Math.sin((i+Date.now()/1000)/4) * 0.7 * dt;
+      if(pos[i*3+1] < -20){
+        pos[i*3+1] = 220 + Math.random()*40;
+        pos[i*3+0] = (Math.random()-0.5)*800;
+      }
+    }
+    snowPoints.geometry.attributes.position.needsUpdate = true;
+  }
+  renderer.render(scene, camera);
+  requestAnimationFrame(animate);
+}
+requestAnimationFrame(animate);
+
+/* ---------- init actions ---------- */
+(async function init(){
+  try{ await runIntroOnce(); } catch(e){ dbg('Intro fail: '+ (e && e.message)); document.getElementById('titleText').style.opacity = 1; document.getElementById('titleText').style.transform = 'translateY(0)'; populateCloudField(6); }
+  // fetch default city
+  fetchWeather(citySelect.value);
+})();
+
+/* ---------- small helpers to manage particles ---------- */
+function createPointCloud(count, color=0xbfd7ff, size=1.8){
+  const geo = new THREE.BufferGeometry();
+  const arr = new Float32Array(count*3);
+  for(let i=0;i<count;i++){
+    arr[i*3+0] = (Math.random()-0.5)*800;
+    arr[i*3+1] = Math.random()*260 + 10;
+    arr[i*3+2] = (Math.random()-0.5)*600 - 100;
+  }
+  geo.setAttribute('position', new THREE.BufferAttribute(arr, 3));
+  const mat = new THREE.PointsMaterial({ color, size, transparent:true, opacity:0.95 });
+  return new THREE.Points(geo, mat);
+}
+function startRain(){ if(rainPoints){ scene.remove(rainPoints); rainPoints.geometry.dispose(); rainPoints.material.dispose(); rainPoints=null; } rainPoints = createPointCloud(1200, 0xbfd7ff, 1.6); scene.add(rainPoints); }
+function stopRain(){ if(rainPoints){ scene.remove(rainPoints); rainPoints.geometry.dispose(); rainPoints.material.dispose(); rainPoints=null; } }
+function startSnow(){ if(snowPoints){ scene.remove(snowPoints); snowPoints.geometry.dispose(); snowPoints.material.dispose(); snowPoints=null; } snowPoints = createPointCloud(520, 0xffffff, 2.6); scene.add(snowPoints); }
+function stopSnow(){ if(snowPoints){ scene.remove(snowPoints); snowPoints.geometry.dispose(); snowPoints.material.dispose(); snowPoints=null; } }
+
+</script>
+</body>
+</html>
